@@ -1,0 +1,9 @@
+AllCops:
+  Exclude:
+    - Guardfile
+    - vendor/**/*
+    - example.rb
+Metrics/AbcSize:
+  Enabled: false
+#Style/SpecialGlobalVars:
+#  Enabled: false
