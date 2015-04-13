@@ -101,6 +101,8 @@ class Chef
               'allocated_at' => Time.now.utc.to_s,
               'host_node' => action_handler.host_node,
               'image' => bootstrap_options[:image],
+              'vco_url' => @driver_options[:vco_options][:url],
+              'workflow_name' => workflow.name,
               'workflow_id' => workflow.id,
               'execution_id' => workflow.execution_id
             }
