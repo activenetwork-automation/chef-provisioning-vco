@@ -102,8 +102,10 @@ class Chef
               'host_node' => action_handler.host_node,
               'image' => bootstrap_options[:image],
               'workflow_id' => workflow.id,
-              'request_id' => workflow.execution_id
+              'execution_id' => workflow.execution_id
             }
+
+            machine_spec.reference
           end
         end
 
@@ -122,7 +124,37 @@ class Chef
         # converge, execute, file and directory.
         #
         def ready_machine(action_handler, machine_spec, machine_options)
+          action_handler.perform_action "Making #{machine_spec.name} ready" do
+            Chef::Log.debug "Readying instance with machine_spec reference #{machine_spec[:reference]}"
 
+            # First we need the workflow object for the workflow that was used to create the
+            # machine. Since we know what the workflow_id is due to machine_spec, we ignore
+            # the workflow name parameter (see VcoWorkflows::Workflow#initialize)
+            workflow = VcoWorkflows::Workflow.new(nil,
+                                                  id:         machine_spec[:reference]['workflow_id'],
+                                                  url:        @driver_options[:vco_options][:url],
+                                                  username:   @driver_options[:vco_options][:username],
+                                                  password:   @driver_options[:vco_options][:password],
+                                                  verify_ssl: @driver_options[:vco_options][:verify_ssl])
+
+            # Now, we get the WorkflowToken for our execution, so we can get some additional
+            # information to locate our VM. If the VM request isn't complete yet, we need to
+            # hang around and wait for it to complete.
+            wf_token = worfklow.token(machine_spec.reference['execution_id'])
+            while wf_token.alive?
+              sleep 5
+              wf_token = workflow.token(wf_token.id)
+            end
+
+            raise "Failed to provision #{machine_spec.name}!" if wf_token.state.match?(/failed/i)
+
+            wf_token = workflow.token(machine_spec[:reference]['execution_id'])
+            machine_spec.reference['vm_uuid'] = wf_token.output_parameters['provisionedVmUuid'] if wf_token.output_parameters['provisionedVmUuid']
+            machine_spec.reference['vm_name'] = wf_token.output_parameters['provisionedVmName'] if wf_token.output_parameters['provisionedVmName']
+
+            # Okay, now build a Machine object!
+
+          end
         end
 
         # Connect to a machine without allocating or readying it.  This method will
