@@ -13,10 +13,17 @@ class Chef
     module VcoDriver
       #
       class Driver < Chef::Provisioning::Driver
-        #
+        # vRA Tenant name
         attr_reader :tenant
+
+        # vRA Tenant Business Group name
         attr_reader :business_unit
+
+        # Chef Provisioning Driver Options
         attr_reader :driver_options
+
+        # Max wait time (for things like ready_machine)
+        attr_accessor :max_wait
 
         # URL scheme:
         # vco:tenant:business_unit
@@ -41,7 +48,16 @@ class Chef
 
           _, @tenant, @business_unit = driver_url.split(/:/)
 
-          @driver_options = config[:driver_options]
+          # Merge driver option defaults with given options.
+          @driver_options = {
+            url: nil,
+            username: nil,
+            password: nil,
+            verify_ssl: true,
+            max_wait: 600
+          }.merge(config[:driver_options])
+
+          @max_wait = @driver_options[:max_wait]
         end
 
         def self.canonicalize_url(driver_url, config)
@@ -66,31 +82,32 @@ class Chef
         # back after allocate_machine completes.
         #
         def allocate_machine(action_handler, machine_spec, machine_options)
-          bootstrap_options = bootstrap_options_for(action_handler, machine_spec, machine_options)
-
           #
-          action_handler.perform_action "Create #{machine_spec.name} with template #{bootstrap_options[:image]}, tenant #{@tenant}, business unit #{@business_unit}" do
-            Chef::Log.debug "Creating instance with bootstrap options #{bootstrap_options}"
+          action_handler.perform_action "Create #{machine_spec.name} with template #{machine_options[:image]}, tenant #{@tenant}, business unit #{@business_unit}" do
+            Chef::Log.debug "Creating instance with bootstrap options #{machine_options}"
+            
+            # Pull in per-machine overrides for driver options (if they exist)
+            driver_options = @driver_options.merge(machine_options[:vco_options]) if machine_options[:vco_options]
 
-            workflow = VcoWorkflows::Workflow.new(bootstrap_options[:workflow_name],
-                                                  id:         bootstrap_options[:workflow_id],
-                                                  url:        @driver_options[:vco_options][:url],
-                                                  username:   @driver_options[:vco_options][:username],
-                                                  password:   @driver_options[:vco_options][:password],
-                                                  verify_ssl: @driver_options[:vco_options][:verify_ssl])
+            workflow = VcoWorkflows::Workflow.new(machine_options[:workflow_name],
+                                                  id:         machine_options[:workflow_id],
+                                                  url:        driver_options[:vco_options][:url],
+                                                  username:   driver_options[:vco_options][:username],
+                                                  password:   driver_options[:vco_options][:password],
+                                                  verify_ssl: driver_options[:vco_options][:verify_ssl])
 
             params                      = {}
             params['nodename']          = machine_spec.name
             params['tenant']            = @tenant
             params['businessUnit']      = @business_unit
-            params['reservationPolicy'] = bootstrap_options[:reservation_policy]
-            params['environment']       = bootstrap_options[:environment]
-            params['onBehalfOf']        = bootstrap_options[:on_behalf_of]
-            params['location']          = bootstrap_options[:location]
-            params['component']         = bootstrap_options[:component]
-            params['coreCount']         = bootstrap_options[:cpu]
-            params['ramMB']             = bootstrap_options[:ram]
-            params['image']             = bootstrap_options[:image]
+            params['reservationPolicy'] = machine_options[:reservation_policy]
+            params['environment']       = machine_options[:environment]
+            params['onBehalfOf']        = machine_options[:on_behalf_of]
+            params['location']          = machine_options[:location]
+            params['component']         = machine_options[:component]
+            params['coreCount']         = machine_options[:cpu]
+            params['ramMB']             = machine_options[:ram]
+            params['image']             = machine_options[:image]
 
             workflow.parameters = params
             workflow.execute
@@ -100,14 +117,17 @@ class Chef
               'driver_version' => Chef::Provisioning::VcoDriver::VERSION,
               'allocated_at' => Time.now.utc.to_s,
               'host_node' => action_handler.host_node,
-              'image' => bootstrap_options[:image],
-              'vco_url' => @driver_options[:vco_options][:url],
+              'vco_url' => driver_options[:vco_options][:url],
               'workflow_name' => workflow.name,
               'workflow_id' => workflow.id,
-              'execution_id' => workflow.execution_id
+              'execution_id' => workflow.execution_id,
+              'reservation_policy' => machine_options[:reservation_policy],
+              'on_behalf_of' => machine_options[:on_behalf_of],
+              'location' => machine_options[:location],
+              'cpu' => machine_options[:cpu],
+              'ram' => machine_options[:ram],
+              'image' => machine_options[:image]
             }
-
-            machine_spec.reference
           end
         end
 
@@ -129,28 +149,39 @@ class Chef
           action_handler.perform_action "Making #{machine_spec.name} ready" do
             Chef::Log.debug "Readying instance with machine_spec reference #{machine_spec[:reference]}"
 
+            # Pull in per-machine overrides for driver options (if they exist)
+            driver_options = @driver_options.merge(machine_options[:vco_options]) if machine_options[:vco_options]
+            
             # First we need the workflow object for the workflow that was used to create the
             # machine. Since we know what the workflow_id is due to machine_spec, we ignore
             # the workflow name parameter (see VcoWorkflows::Workflow#initialize)
-            workflow = VcoWorkflows::Workflow.new(nil,
-                                                  id:         machine_spec[:reference]['workflow_id'],
-                                                  url:        @driver_options[:vco_options][:url],
-                                                  username:   @driver_options[:vco_options][:username],
-                                                  password:   @driver_options[:vco_options][:password],
-                                                  verify_ssl: @driver_options[:vco_options][:verify_ssl])
+            workflow = VcoWorkflows::Workflow.new(machine_spec.reference['workflow_name'],
+                                                  id:         machine_spec.reference['workflow_id'],
+                                                  url:        driver_options[:vco_options][:url],
+                                                  username:   driver_options[:vco_options][:username],
+                                                  password:   driver_options[:vco_options][:password],
+                                                  verify_ssl: driver_options[:vco_options][:verify_ssl])
 
             # Now, we get the WorkflowToken for our execution, so we can get some additional
             # information to locate our VM. If the VM request isn't complete yet, we need to
-            # hang around and wait for it to complete.
+            # hang around and wait for it to complete. Stop waiting when we hit our max_wait
+            # timeout.
             wf_token = worfklow.token(machine_spec.reference['execution_id'])
-            while wf_token.alive?
-              sleep 5
+            start_wait = Time.now
+            while wf_token.alive? && (Time.now - start_wait < @max_wait)
+              sleep 10
               wf_token = workflow.token(wf_token.id)
             end
 
+            # If execution state comes back with failed, we need to bail
             raise "Failed to provision #{machine_spec.name}!" if wf_token.state.match?(/failed/i)
 
-            wf_token = workflow.token(machine_spec[:reference]['execution_id'])
+            # If execution state is still in something "still running", bail on wait timeout.
+            # Note: when execution is completed wf_token.alive? will be false.
+            raise "Wait timeout for #{machine_spec.name}" if wf_token.alive?
+
+            # Grab the VM name and UUID from the workflow output parameters, so we can attach
+            # directly to the VM from this point forward
             machine_spec.reference['vm_uuid'] = wf_token.output_parameters['provisionedVmUuid'] if wf_token.output_parameters['provisionedVmUuid']
             machine_spec.reference['vm_name'] = wf_token.output_parameters['provisionedVmName'] if wf_token.output_parameters['provisionedVmName']
 
@@ -189,25 +220,6 @@ class Chef
         # @param [Hash] machine_options A set of options representing the desired state of the machine
         def stop_machine(action_handler, machine_spec, machine_options)
 
-        end
-
-        # Calculate the bootstrap options
-        #
-        # @param [Chef::Provisioning::ActionHandler] action_handler The action_handler object that is calling this method
-        # @param [Chef::Provisioning::ManagedEntry] machine_spec A machine specification representing this machine.
-        # @param [Hash] machine_options A set of options representing the desired state of the machine
-        def bootstrap_options_for(action_handler, machine_spec, machine_options)
-          bootstrap_options = (machine_options[:bootstrap_options] || {}).to_h.dup
-          image = bootstrap_options[:image] || machine_options[:image]
-          bootstrap_options[:image] = image
-
-          # if machine_options[:is_windows]
-          #   Chef::Log.debug "Setting WinRM userdata..."
-          #   bootstrap_options[:user_data] = user_data
-          # else
-          #   Chef::Log.debug "Non-windows, not setting userdata"
-          # end
-          bootstrap_options
         end
       end
     end
