@@ -284,6 +284,162 @@ class Chef
         def stop_machine(action_handler, machine_spec, machine_options)
 
         end
+
+        def start_machine(action_handler, machine_spec, machine_options, wait = false)
+          action_handler.perform_action "Ensuring #{machine_spec.name} is started..." do
+            Chef::Log.debug "Starting instance with machine_spec reference #{machine_spec[:reference]}"
+
+            unless machine_spec.reference['vm_uuid'] && machine_spec.reference['vm_name']
+              raise "Unable to find VM data to start #{machine_spec.name}!"
+            end
+
+            instance_for(machine_spec, machine_options)
+
+
+
+            workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:start_machine][:name],
+                                                  id: @driver_options[:vco_options][:workflows][:start_machine][:id],
+                                                  service: workflow_service_for(@driver_options))
+
+            workflow.parameters = {
+              'vmName' => machine_spec.reference['vm_name'],
+              'vmUuid' => machine_spec.reference['vm_uuid']
+            }
+
+            workflow.execute
+
+            wf_token = wait_for_workflow(workflow.token)
+
+          end
+        end
+
+        # Create a machine object
+        #
+        # @param [Chef::Provisioning::ManagedEntry] machine_spec A machine specification representing this machine.
+        # @param [Hash] machine_options A set of options representing the desired state of the machine
+        # @param [Hash] instance An "instance" hash describing live data about the VM
+        # @return [Chef::Provisioning::Machine]
+        def machine_for(machine_spec, machine_options, instance = nil)
+          instance ||= instance_for(machine_spec)
+
+          if !instance
+            raise "Instance for node #{machine_spec.name} has not been created!"
+          end
+
+          if machine_spec.reference['is_windows']
+            Chef::Provisioning::Machine::WindowsMachine.new(machine_spec, transport_for(machine_spec, machine_options, instance), convergence_strategy_for(machine_spec, machine_options))
+          else
+            Chef::Provisioning::Machine::UnixMachine.new(machine_spec, transport_for(machine_spec, machine_options, instance), convergence_strategy_for(machine_spec, machine_options))
+          end
+        end
+
+        # Create an "instance", basically a hash of useful information about the machine
+        #
+        # @param [Chef::Provisioning::ManagedEntry] machine_spec A machine specification representing this machine.
+        # @param [Hash] machine_options A set of options representing the desired state of the machine
+        # @return [Hash]
+        def instance_for(machine_spec, machine_options)
+          workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:start_machine][:name],
+                                                id: @driver_options[:vco_options][:workflows][:start_machine][:id],
+                                                service: workflow_service_for(@driver_options))
+
+          workflow.parameters = {
+            'vmName' => machine_spec.reference['vm_name'],
+            'vmUuid' => machine_spec.reference['vm_uuid']
+          }
+          workflow.execute
+          wf_token = wait_for_workflow(workflow.token)
+          {
+            host_name:       wf_token.output_parameters['hostName'],
+            ip_address:      wf_token.output_parameters['ipAddress'],
+            vm_host:         wf_token.output_parameters['vmHost'],
+            boot_time:       wf_token.output_parameters['bootTime'],
+            power_state:     wf_token.output_parameters['powerState'],
+            clean_power_off: wf_token.output_parameters['cleanPowerOff'],
+            online_standby:  wf_token.output_parameters['onlineStandBy'],
+            guest_state:     wf_token.output_parameters['guestState']
+          }
+        end
+
+        def transport_for(machine_spec, machine_options, instance)
+          # if machine_options.has_key?(:transport) && machine_options[:transport].eql?(:vmtools)
+          #   create_vmtools_transport(machine_spec, machine_options, instance)
+          # elsif machine_spec.reference['is_windows']
+          if machine_spec.reference['is_windows']
+            create_winrm_transport(machine_spec, machine_options, instance)
+          else
+            create_ssh_transport(machine_spec, machine_options, instance)
+          end
+        end
+
+        def create_ssh_transport(machine_spec, machine_options, instance)
+          # ssh_options = ssh_options_for(machine_spec, machine_options, instance)
+          ssh_options = nil
+          username = machine_spec.reference['ssh_username'] || machine_options[:ssh_username] || default_ssh_username
+          if machine_options.has_key?(:ssh_username) && machine_options[:ssh_username] != machine_spec.reference['ssh_username']
+            Chef::Log.warn("Server #{machine_spec.name} was created with SSH username #{machine_spec.reference['ssh_username']} and machine_options specifies username #{machine_options[:ssh_username]}.  Using #{machine_spec.reference['ssh_username']}.  Please edit the node and change the chef_provisioning.reference.ssh_username attribute if you want to change it.")
+          end
+          options = {}
+          if machine_spec.reference[:sudo] || (!machine_spec.reference.has_key?(:sudo) && username != 'root')
+            options[:prefix] = 'sudo '
+          end
+
+          # remote_host = determine_remote_host(machine_spec, instance)
+          remote_host = instance[:ip_address]
+
+          #Enable pty by default
+          options[:ssh_pty_enable] = true
+          options[:ssh_gateway] = machine_spec.reference['ssh_gateway'] if machine_spec.reference.has_key?('ssh_gateway')
+
+          Chef::Provisioning::Transport::SSH.new(remote_host, username, ssh_options, options, config)
+        end
+
+        def create_winrm_transport(machine_spec, machine_options, instance)
+
+          remote_host = instance[:ip_address]
+        end
+
+        # Private methods start here
+
+        private
+
+        # Create a workflow service object by using the defined driver options
+        #
+        # @param [Hash] driver_options
+        # @return [VcoWorkflows::WorkflowService]
+        def workflow_service_for(driver_options = {})
+          vcosession = VcoWorkflows::VcoSession.new(driver_options[:vco_options][:url],
+                                                    user:       driver_options[:vco_options][:username],
+                                                    password:   driver_options[:vco_options][:password],
+                                                    verify_ssl: driver_options[:vco_options][:verify_ssl])
+          VcoWorkflows::WorkflowService.new(vcosession)
+        end
+
+        # Wait for a workflow execution to complete
+        #
+        # @param [VcoWorkflows::WorkflowToken] wf_token WorkflowToken for the execution you are waiting for
+        # @return [VcoWorkflows::WorkflowTokwn] Updated token
+        def wait_for_workflow(wf_token)
+          # See what the result was for the workflow execution. It may not be
+          # done yet, so we're going to have to wait around for it to finish.
+          start_wait = Time.now
+          while wf_token.alive? && (Time.now - start_wait < @max_wait)
+            sleep @wait_interval
+            wf_token = VcoWorkflows::WorkflowToken.new(workflow_service_for(@driver_options),
+                                                       wf_token.workflow_id,
+                                                       wf_token.id)
+          end
+
+          # If execution state comes back with failed, we need to bail
+          raise "Workflow failed for #{machine_spec.name}!" if wf_token.state.match?(/failed/i)
+
+          # If execution state is still in something "still running", bail on wait timeout.
+          # Note: when execution is completed wf_token.alive? will be false.
+          raise "Workflow wait timeout for #{machine_spec.name}" if wf_token.alive?
+
+          # Return the updated token
+          wf_token
+        end
       end
     end
   end
