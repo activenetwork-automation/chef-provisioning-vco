@@ -1,5 +1,5 @@
 #
-module Chef
+class Chef
   #
   module Provisioning
     #
