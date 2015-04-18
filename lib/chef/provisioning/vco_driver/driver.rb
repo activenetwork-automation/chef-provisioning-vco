@@ -83,6 +83,10 @@ class Chef
                 destroy_machine:  {
                   name: 'destroy_machine',
                   id:   'b5ddf095-7615-4351-9f9c-b33fb0ff215c'
+                },
+                get_machine_info: {
+                  name: 'get_machine_info',
+                  id:   'ae6fa6e2-7aa7-4cff-81b3-f18f9d9468e9'
                 }
               }
             }
@@ -278,15 +282,22 @@ class Chef
 
         end
 
-        # Stop the given machine.
+        # Stop the machine.
         #
         # @param [Chef::Provisioning::ActionHandler] action_handler The action_handler object that is calling this method
         # @param [Chef::Provisioning::ManagedEntry] machine_spec A machine specification representing this machine.
         # @param [Hash] machine_options A set of options representing the desired state of the machine
-        def stop_machine(action_handler, machine_spec, machine_options)
+        # @param [Boolean] wait Whether to wait for the shutdown to complete or not.
+        def stop_machine(action_handler, machine_spec, machine_options, wait = false)
 
         end
 
+        # Start the machine
+        #
+        # @param [Chef::Provisioning::ActionHandler] action_handler The action_handler object that is calling this method
+        # @param [Chef::Provisioning::ManagedEntry] machine_spec A machine specification representing this machine.
+        # @param [Hash] machine_options A set of options representing the desired state of the machine
+        # @param [Boolean] wait Whether to wait for the startup to complete or not.
         def start_machine(action_handler, machine_spec, machine_options, wait = false)
           action_handler.perform_action "Ensuring #{machine_spec.name} is started..." do
             Chef::Log.debug "Starting instance with machine_spec reference #{machine_spec[:reference]}"
@@ -295,23 +306,21 @@ class Chef
               raise "Unable to find VM data to start #{machine_spec.name}!"
             end
 
-            instance_for(machine_spec, machine_options)
-
-
+            # No point in starting a machine that's already running...
+            instance = instance_for(machine_spec, machine_options)
+            return if instance[:guest_state].eql?('running')
 
             workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:start_machine][:name],
                                                   id: @driver_options[:vco_options][:workflows][:start_machine][:id],
                                                   service: workflow_service_for(@driver_options))
-
             workflow.parameters = {
               'vmName' => machine_spec.reference['vm_name'],
               'vmUuid' => machine_spec.reference['vm_uuid']
             }
-
             workflow.execute
 
-            wf_token = wait_for_workflow(workflow.token)
-
+            return unless wait
+            wait_for_workflow(workflow.token)
           end
         end
 
