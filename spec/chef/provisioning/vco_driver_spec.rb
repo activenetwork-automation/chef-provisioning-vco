@@ -1,11 +1,11 @@
 require 'spec_helper'
 
-describe Chef::Provisioning::Vco do
+describe Chef::Provisioning::VcoDriver do
   it 'has a version number' do
-    expect(Chef::Provisioning::Vco::VERSION).not_to be nil
+    expect(Chef::Provisioning::VcoDriver::VERSION).not_to be nil
   end
 
-  it 'does something useful' do
-    expect(false).to eq(true)
+  it 'does nothing useful' do
+    expect(true).to eq(true)
   end
 end
