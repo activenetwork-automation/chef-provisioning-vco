@@ -48,20 +48,50 @@ class Chef
         # - verify_ssl - whether to verify TLS certificates (defaults to true)
         #
         def initialize(driver_url, config)
-          super
+          super(driver_url, config)
 
           _, @tenant, @business_unit = driver_url.split(/:/)
 
-          # Merge driver option defaults with given options.
-          @driver_options = {
-            url: nil,
-            username: nil,
-            password: nil,
-            verify_ssl: true,
-            max_wait: 600
-          }.merge(config[:driver_options])
+          # Set our defaults for driver options
+          @driver_defaults = {
+            vco_options: {
+              url: nil,
+              username: nil,
+              password: nil,
+              verify_ssl: true,
+              max_wait: 600,
+              wait_interval: 15,
+              workflows: {
+                allocate_machine: {
+                  name: 'allocate_machine',
+                  id:   '708bf42d-2eb5-4dec-b511-e8295b66245b'
+                },
+                ready_machine:    {
+                  name: 'ready_machine',
+                  id:   'd2065000-d7cc-4719-be9e-4f7318ccf708'
+                },
+                start_machine:    {
+                  name: 'start_machine',
+                  id:   'd2065000-d7cc-4719-be9e-4f7318ccf708'
+                },
+                stop_machine:     {
+                  name: 'stop_machine',
+                  id:   '0ff83a4d-c0c4-451f-9077-cf7d58cfb01a'
+                },
+                destroy_machine:  {
+                  name: 'destroy_machine',
+                  id:   'b5ddf095-7615-4351-9f9c-b33fb0ff215c'
+                }
+              }
+            }
+          }
 
-          @max_wait = @driver_options[:max_wait]
+          # Merge driver option defaults with given options.
+          @driver_options = @driver_defaults.merge(config[:driver_options])
+
+          # Set max_wait from the driver options
+          @max_wait      = @driver_options[:vco_options][:max_wait]
+          @wait_interval = @driver_options[:vco_options][:wait_interval]
         end
 
         def self.canonicalize_url(driver_url, config)
