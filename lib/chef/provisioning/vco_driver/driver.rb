@@ -187,44 +187,69 @@ class Chef
           action_handler.perform_action "Making #{machine_spec.name} ready" do
             Chef::Log.debug "Readying instance with machine_spec reference #{machine_spec[:reference]}"
 
-            # Pull in per-machine overrides for driver options (if they exist)
-            driver_options = @driver_options.merge(machine_options[:vco_options]) if machine_options[:vco_options]
-            
-            # First we need the workflow object for the workflow that was used to create the
-            # machine. Since we know what the workflow_id is due to machine_spec, we ignore
-            # the workflow name parameter (see VcoWorkflows::Workflow#initialize)
-            workflow = VcoWorkflows::Workflow.new(machine_spec.reference['workflow_name'],
-                                                  id:         machine_spec.reference['workflow_id'],
-                                                  url:        driver_options[:vco_options][:url],
-                                                  username:   driver_options[:vco_options][:username],
-                                                  password:   driver_options[:vco_options][:password],
-                                                  verify_ssl: driver_options[:vco_options][:verify_ssl])
+            # ============================
+            # Ensure the machine was built
+            # ============================
 
-            # Now, we get the WorkflowToken for our execution, so we can get some additional
+            # Get the WorkflowToken for our execution, so we can get some additional
             # information to locate our VM. If the VM request isn't complete yet, we need to
             # hang around and wait for it to complete. Stop waiting when we hit our max_wait
             # timeout.
-            wf_token = worfklow.token(machine_spec.reference['execution_id'])
-            start_wait = Time.now
-            while wf_token.alive? && (Time.now - start_wait < @max_wait)
-              sleep 10
-              wf_token = workflow.token(wf_token.id)
+            wf_token   = VcoWorkflows::WorkflowToken.new(workflow_service_for(@driver_options),
+                                                         machine_spec.reference['workflow_id'],
+                                                         machine_spec.reference['execution_id'])
+            wf_token = wait_for_workflow(wf_token)
+
+            # Get the vm name and uuid from the workflow output parameters.
+            # These are arrays, but should only have a single element for our VM.
+            vm_uuids = wf_token.output_parameters['provisionedVmUuids']
+            vm_names = wf_token.output_parameters['provisionedVmNames']
+
+            # Sanity check, we should have the same number of names to uuids (1:1)
+            if vm_uuids.length != vm_names.length
+              raise "Provisioned VM UUID count doesn't match provisioned VM Name count."
             end
 
-            # If execution state comes back with failed, we need to bail
-            raise "Failed to provision #{machine_spec.name}!" if wf_token.state.match?(/failed/i)
+            # And we should only have a single VM in the result set
+            if vm_uuids.length > 1 || vm_names.length > 1
+              raise "#{machine_spec.name} provisioned by #{wf_token.name} request #{wf_token.id} resulted in multiple VMs!"
+            end
 
-            # If execution state is still in something "still running", bail on wait timeout.
-            # Note: when execution is completed wf_token.alive? will be false.
-            raise "Wait timeout for #{machine_spec.name}" if wf_token.alive?
+            # Everything looks good, let's grab and save the name and uuid for future reference.
+            # We need to add the VM uuid because there's a possibility that the execution_id
+            # we saved in allocate_machine could go away if something on the Orchestrator
+            # server changes, and we don't want that to trigger a re-allocation for something
+            # that already exists.
+            machine_spec.reference['vm_uuid'] = vm_uuids.first
+            machine_spec.reference['vm_name'] = vm_names.first
 
-            # Grab the VM name and UUID from the workflow output parameters, so we can attach
-            # directly to the VM from this point forward
-            machine_spec.reference['vm_uuid'] = wf_token.output_parameters['provisionedVmUuid'] if wf_token.output_parameters['provisionedVmUuid']
-            machine_spec.reference['vm_name'] = wf_token.output_parameters['provisionedVmName'] if wf_token.output_parameters['provisionedVmName']
+            # Save it
+            machine_spec.save(action_handler)
 
-            # Okay, now build a Machine object!
+            # ===========================
+            # Ensure the machine is ready
+            # ===========================
 
+            # Construct the workflow
+            workflow_name    = @driver_options[:vco_options][:workflows][:ready_machine][:name]
+            workflow_options = {
+              id:      @driver_options[:vco_options][:workflows][:ready_machine][:id],
+              service: wf_service
+            }
+            workflow = VcoWorkflows::Workflow.new(workflow_name, workflow_options)
+
+            # Set the parameters for the machine we want
+            workflow.parameters = {
+              'vmName' => machine_spec.reference['vm_uuid'],
+              'vmUuid' => machine_spec.reference['vm_uuid']
+            }
+
+            # Execute the workflow and wait for the result
+            workflow.execute
+            wait_for_workflow(workflow.token)
+
+            # If that was successful, build the machine object
+            machine_for(action_handler, machine_spec, machine_options)
           end
         end
 
