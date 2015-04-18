@@ -21,9 +21,13 @@ class Chef
 
         # Chef Provisioning Driver Options
         attr_reader :driver_options
+        attr_reader :driver_defaults
 
         # Max wait time (for things like ready_machine)
         attr_accessor :max_wait
+
+        # How long to wait between checks when waiting for something
+        attr_accessor :wait_interval
 
         # URL scheme:
         # vco:tenant:business_unit
