@@ -3,6 +3,7 @@ require 'chef/provisioning/version'
 require 'chef/provisioning/machine/basic_machine'
 require 'chef/provisioning/machine/unix_machine'
 require 'chef/provisioning/machine/windows_machine'
+require 'chef/provisioning/vco_driver/defaults'
 require 'chef/provisioning/vco_driver/version'
 require 'chef/provisioning/transport/ssh'
 require 'chef/provisioning/transport/winrm'
@@ -52,52 +53,22 @@ class Chef
         def initialize(driver_url, config)
           super(driver_url, config)
 
+          Chef::Log.debug "Initializing vco_driver..."
+
           _, @tenant, @business_unit = driver_url.split(/:/)
 
-          # Set our defaults for driver options
-          @driver_defaults = {
-            vco_options: {
-              url: nil,
-              username: nil,
-              password: nil,
-              verify_ssl: true,
-              max_wait: 600,
-              wait_interval: 15,
-              workflows: {
-                allocate_machine: {
-                  name: 'allocate_machine',
-                  id:   '708bf42d-2eb5-4dec-b511-e8295b66245b'
-                },
-                ready_machine:    {
-                  name: 'ready_machine',
-                  id:   'd2065000-d7cc-4719-be9e-4f7318ccf708'
-                },
-                start_machine:    {
-                  name: 'start_machine',
-                  id:   'd2065000-d7cc-4719-be9e-4f7318ccf708'
-                },
-                stop_machine:     {
-                  name: 'stop_machine',
-                  id:   '0ff83a4d-c0c4-451f-9077-cf7d58cfb01a'
-                },
-                destroy_machine:  {
-                  name: 'destroy_machine',
-                  id:   'b5ddf095-7615-4351-9f9c-b33fb0ff215c'
-                },
-                get_machine_info: {
-                  name: 'get_machine_info',
-                  id:   'ae6fa6e2-7aa7-4cff-81b3-f18f9d9468e9'
-                }
-              }
-            }
-          }
+          Chef::Log.debug "vco driver: tenant = '#{@tenant}'; business unit = '#{@business_unit}'"
 
           # Merge driver option defaults with given options.
-          @driver_options = @driver_defaults.merge(config[:driver_options])
+          @driver_options = DEFAULT_DRIVER_OPTIONS.merge(config[:driver_options])
+          Chef::Log.debug "vco driver: options set to: #{@driver_options}"
 
           # Set max_wait from the driver options
           @max_wait      = @driver_options[:vco_options][:max_wait]
           @wait_interval = @driver_options[:vco_options][:wait_interval]
+
+          Chef::Log.debug "vco driver: max_wait set to #{@max_wait} seconds."
+          Chef::Log.debug "vco driver: wait_interval set to #{@wait_interval} seconds."
         end
 
         def self.canonicalize_url(driver_url, config)
@@ -129,12 +100,14 @@ class Chef
             # See if we've provisoned this already
             # If we have, make sure the machine is up, then return.
             if machine_spec.reference['vm_uuid'] && !machine_spec.reference['vm_uuid'].nil?
+              Chef::Log.debug("Machine #{machine_spec.name} should already exist; starting...")
               start_machine(action_handler, machine_spec, machine_options)
               return machine_spec
             end
             
             # Apparently it doesn't exist yet, so we need to make one.
             # Construct the workflow
+            Chef::Log.debug "Creating workflow request for #{machine_spec.name}..."
             workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:allocate_machine][:name],
                                                   id: @driver_options[:vco_options][:workflows][:allocate_machine][:id],
                                                   service: workflow_service_for(@driver_options))
@@ -155,6 +128,7 @@ class Chef
             }
 
             # Execute the workflow
+            Chef::Log.debug "Submitting provisioning workflow execution for #{machine_spec.name}"
             workflow.execute
 
             # Create our reference data
@@ -197,65 +171,23 @@ class Chef
             # Ensure the machine was built
             # ============================
 
-            # Get the WorkflowToken for our execution, so we can get some additional
-            # information to locate our VM. If the VM request isn't complete yet, we need to
-            # hang around and wait for it to complete. Stop waiting when we hit our max_wait
-            # timeout.
-            wf_token   = VcoWorkflows::WorkflowToken.new(workflow_service_for(@driver_options),
-                                                         machine_spec.reference['workflow_id'],
-                                                         machine_spec.reference['execution_id'])
-            wf_token = wait_for_workflow(wf_token)
+            # First check machine_spec to see if it's already got a name and uuid.
+            # If it does, then can check to see if the machine is alive, and simply carry on
+            Chef::Log.debug "Checking for existing instance of #{machine_spec.name}..."
+            instance = instance_for(machine_spec, machine_options)
 
-            # Get the vm name and uuid from the workflow output parameters.
-            # These are arrays, but should only have a single element for our VM.
-            vm_uuids = wf_token.output_parameters['provisionedVmUuids']
-            vm_names = wf_token.output_parameters['provisionedVmNames']
-
-            # Sanity check, we should have the same number of names to uuids (1:1)
-            if vm_uuids.length != vm_names.length
-              raise "Provisioned VM UUID count doesn't match provisioned VM Name count."
+            if instance.nil?
+              Chef::Log.debug "No instance for #{machine_spec.name} found."
+              wait_for_machine(machine_spec, machine_options)
             end
-
-            # And we should only have a single VM in the result set
-            if vm_uuids.length > 1 || vm_names.length > 1
-              raise "#{machine_spec.name} provisioned by #{wf_token.name} request #{wf_token.id} resulted in multiple VMs!"
-            end
-
-            # Everything looks good, let's grab and save the name and uuid for future reference.
-            # We need to add the VM uuid because there's a possibility that the execution_id
-            # we saved in allocate_machine could go away if something on the Orchestrator
-            # server changes, and we don't want that to trigger a re-allocation for something
-            # that already exists.
-            machine_spec.reference['vm_uuid'] = vm_uuids.first
-            machine_spec.reference['vm_name'] = vm_names.first
-
-            # Save it
-            machine_spec.save(action_handler)
 
             # ===========================
             # Ensure the machine is ready
             # ===========================
 
-            # Construct the workflow
-            workflow_name    = @driver_options[:vco_options][:workflows][:ready_machine][:name]
-            workflow_options = {
-              id:      @driver_options[:vco_options][:workflows][:ready_machine][:id],
-              service: wf_service
-            }
-            workflow = VcoWorkflows::Workflow.new(workflow_name, workflow_options)
-
-            # Set the parameters for the machine we want
-            workflow.parameters = {
-              'vmName' => machine_spec.reference['vm_uuid'],
-              'vmUuid' => machine_spec.reference['vm_uuid']
-            }
-
-            # Execute the workflow and wait for the result
-            workflow.execute
-            wait_for_workflow(workflow.token)
-
             # If that was successful, build the machine object
-            machine_for(action_handler, machine_spec, machine_options)
+            Chef::Log.debug "Creating Machine object for instance #{machine_spec.name}"
+            machine_for(machine_spec, machine_options, instance)
           end
         end
 
@@ -268,7 +200,7 @@ class Chef
         # converge, execute, file and directory.
         #
         def connect_to_machine(machine_spec, machine_options)
-
+          raise "Whoops, somebody didn't implement connect_to_machine!"
         end
 
 
@@ -279,7 +211,32 @@ class Chef
         # @param [Chef::Provisioning::ManagedEntry] machine_spec A machine specification representing this machine.
         # @param [Hash] machine_options A set of options representing the desired state of the machine
         def destroy_machine(action_handler, machine_spec, machine_options)
+          action_handler.perform_action "Destroy #{machine_spec.name} tenant #{@tenant}, business unit #{@business_unit}" do
+            Chef::Log.debug "Destroying instance #{machine_spec.name}..."
 
+            # Make sure there's something to destroy
+            instance = instance_for(machine_spec, machine_options)
+
+            if instance.nil?
+              Chef::Log.debug "Instance #{machine_spec.name} does not seem to exist, nothing to destroy."
+              return
+            end
+
+            # Apparently it doesn't exist yet, so we need to make one.
+            # Construct the workflow
+            Chef::Log.debug "Creating workflow to destroy #{machine_spec.name}"
+            workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:destroy_machine][:name],
+                                                  id: @driver_options[:vco_options][:workflows][:destroy_machine][:id],
+                                                  service: workflow_service_for(@driver_options))
+            workflow.parameters = {
+              'vmName' => machine_spec.reference['vm_name'],
+              'vmUuid' => machine_spec.reference['vm_uuid']
+            }
+
+            # Fire and forget.
+            Chef::Log.debug "Executing workflow to destroy #{machine_spec.name}"
+            workflow.execute
+          end
         end
 
         # Stop the machine.
@@ -289,7 +246,31 @@ class Chef
         # @param [Hash] machine_options A set of options representing the desired state of the machine
         # @param [Boolean] wait Whether to wait for the shutdown to complete or not.
         def stop_machine(action_handler, machine_spec, machine_options, wait = false)
+          action_handler.perform_action "Stopping machine #{machine_spec.name}" do
+            Chef::Log.debug "Stopping machine #{machine_spec.name}"
 
+            # See if it exists and is running
+            instance = instance_for(machine_spec, machine_options)
+
+            if instance.nil?
+              Chef::Log.debug "Instance #{machine_spec.name} does not seem to exist, nothing to stop."
+
+            end
+
+            # Construct the workflow
+            Chef::Log.debug "Creating workflow to stop #{machine_spec.name}..."
+            workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:stop_machine][:name],
+                                                  id: @driver_options[:vco_options][:workflows][:stop_machine][:id],
+                                                  service: workflow_service_for(@driver_options))
+            workflow.parameters = {
+              'vmName' => machine_spec.reference['vm_name'],
+              'vmUuid' => machine_spec.reference['vm_uuid']
+            }
+
+            # Fire and forget.
+            Chef::Log.debug "Executing workflow to destroy #{machine_spec.name}"
+            workflow.execute
+          end
         end
 
         # Start the machine
@@ -308,8 +289,12 @@ class Chef
 
             # No point in starting a machine that's already running...
             instance = instance_for(machine_spec, machine_options)
-            return if instance[:guest_state].eql?('running')
+            if instance[:guest_state].eql?('running')
+              Chef::Log.debug "Instance #{machine_spec.name} is already running. Nothing to do."
+              return
+            end
 
+            # Retrieve the start_machine workflow
             workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:start_machine][:name],
                                                   id: @driver_options[:vco_options][:workflows][:start_machine][:id],
                                                   service: workflow_service_for(@driver_options))
@@ -320,7 +305,16 @@ class Chef
             workflow.execute
 
             return unless wait
-            wait_for_workflow(workflow.token)
+            wf_token = wait_for_workflow(workflow.token)
+
+            # If execution state comes back with failed, we need to bail
+            raise "Workflow failed for #{machine_spec.name}!" if wf_token.state.match?(/failed/i)
+
+            # If execution state is still in something "still running", bail on wait timeout.
+            # Note: when execution is completed wf_token.alive? will be false.
+            raise "Workflow wait timeout for #{machine_spec.name}" if wf_token.alive?
+
+
           end
         end
 
@@ -331,7 +325,7 @@ class Chef
         # @param [Hash] instance An "instance" hash describing live data about the VM
         # @return [Chef::Provisioning::Machine]
         def machine_for(machine_spec, machine_options, instance = nil)
-          instance ||= instance_for(machine_spec)
+          instance ||= instance_for(machine_spec, machine_options)
 
           if !instance
             raise "Instance for node #{machine_spec.name} has not been created!"
@@ -350,8 +344,12 @@ class Chef
         # @param [Hash] machine_options A set of options representing the desired state of the machine
         # @return [Hash]
         def instance_for(machine_spec, machine_options)
-          workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:start_machine][:name],
-                                                id: @driver_options[:vco_options][:workflows][:start_machine][:id],
+          # If the vm name and uuid don't yet exist, we can't get instance data
+          return nil unless machine_spec.reference.has_key?['vm_name'] && machine_spec.reference.has_key?['vm_uuid']
+
+          # Create the workflow object to get the VM info for the instance
+          workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:get_machine_info][:name],
+                                                id: @driver_options[:vco_options][:workflows][:get_machine_info][:id],
                                                 service: workflow_service_for(@driver_options))
 
           workflow.parameters = {
@@ -359,7 +357,10 @@ class Chef
             'vmUuid' => machine_spec.reference['vm_uuid']
           }
           workflow.execute
+
           wf_token = wait_for_workflow(workflow.token)
+          return nil if wf_token.state.match(/failed/i)
+
           {
             host_name:       wf_token.output_parameters['hostName'],
             ip_address:      wf_token.output_parameters['ipAddress'],
@@ -456,6 +457,7 @@ class Chef
         # @param [Hash] driver_options
         # @return [VcoWorkflows::WorkflowService]
         def workflow_service_for(driver_options = {})
+          Chef::Log.debug("Generating workflow service for #{driver_options[:vco_options][:url]}")
           vcosession = VcoWorkflows::VcoSession.new(driver_options[:vco_options][:url],
                                                     user:       driver_options[:vco_options][:username],
                                                     password:   driver_options[:vco_options][:password],
@@ -473,10 +475,33 @@ class Chef
           start_wait = Time.now
           while wf_token.alive? && (Time.now - start_wait < @max_wait)
             sleep @wait_interval
+            Chef::Log.debug("Checking status of workflow #{wf_token.workflow_id} / #{wf_token.id}")
             wf_token = VcoWorkflows::WorkflowToken.new(workflow_service_for(@driver_options),
                                                        wf_token.workflow_id,
                                                        wf_token.id)
           end
+          Chef::Log.debug("Wait timeout while waiting for #{wf_token.workflow_id} / #{wf_token.id}") if wf_token.alive?
+
+          # Return the updated token
+          wf_token
+        end
+
+        # Wait for a machine that is building
+        #
+        # @param [Chef::Provisioning::ManagedEntry] machine_spec A machine specification representing this machine.
+        # @param [Hash] machine_options A set of options representing the desired state of the machine
+        def wait_for_machine(machine_spec, machine_options)
+          # Get the WorkflowToken for our execution, so we can get some additional
+          # information to locate our VM. If the VM request isn't complete yet, we need to
+          # hang around and wait for it to complete. Stop waiting when we hit our max_wait
+          # timeout.
+          Chef::Log.debug("Waiting for #{machine_spec.name} to complete provisioning...")
+          Chef::Log.debug("Requesting completion data for workflow #{machine_spec.reference['workflow_id']}, execution #{machine_spec.reference['execution_id']}")
+          wf_token   = VcoWorkflows::WorkflowToken.new(workflow_service_for(@driver_options),
+                                                       machine_spec.reference['workflow_id'],
+                                                       machine_spec.reference['execution_id'])
+          Chef::Log.debug('Will wait for completion of workflow...')
+          wf_token = wait_for_workflow(wf_token)
 
           # If execution state comes back with failed, we need to bail
           raise "Workflow failed for #{machine_spec.name}!" if wf_token.state.match?(/failed/i)
@@ -485,8 +510,34 @@ class Chef
           # Note: when execution is completed wf_token.alive? will be false.
           raise "Workflow wait timeout for #{machine_spec.name}" if wf_token.alive?
 
-          # Return the updated token
-          wf_token
+          Chef::Log.debug("Provisioning for #{machine_spec.name} appears to have succeeded.")
+          # Get the vm name and uuid from the workflow output parameters.
+          # These are arrays, but should only have a single element for our VM.
+          vm_uuids = wf_token.output_parameters['provisionedVmUuids']
+          vm_names = wf_token.output_parameters['provisionedVmNames']
+
+          # Sanity check, we should have the same number of names to uuids (1:1)
+          if vm_uuids.length != vm_names.length
+            raise "Provisioned VM UUID count doesn't match provisioned VM Name count."
+          end
+
+          # And we should only have a single VM in the result set
+          if vm_uuids.length > 1 || vm_names.length > 1
+            raise "#{machine_spec.name} provisioned by #{wf_token.name} request #{wf_token.id} resulted in multiple VMs!"
+          end
+
+          # Everything looks good, let's grab and save the name and uuid for future reference.
+          # We need to add the VM uuid because there's a possibility that the execution_id
+          # we saved in allocate_machine could go away if something on the Orchestrator
+          # server changes, and we don't want that to trigger a re-allocation for something
+          # that already exists.
+          Chef::Log.debug("Provisioned #{machine_spec.name}, vm_name #{vm_names.first}, vm_uuid #{vm_uuids.first}")
+          machine_spec.reference['vm_uuid'] = vm_uuids.first
+          machine_spec.reference['vm_name'] = vm_names.first
+
+          # Save it
+          Chef::Log.debug("Saving machine_spec for #{machine_spec.name}")
+          machine_spec.save(action_handler)
         end
       end
     end

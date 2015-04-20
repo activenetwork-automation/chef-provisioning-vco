@@ -3,7 +3,7 @@
 require 'chef/provisioning/vco_driver'
 
 # Some variables that control where and what we are building
-on_behalf_of            = 'svc_vco@example.com'
+on_behalf_of            = 'svc.vco@example.com'
 vcac_tenant             = 'vcac_tenant'
 business_unit           = 'ref2'
 reservation_policy      = 'nonprod'
