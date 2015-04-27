@@ -5,7 +5,7 @@ class Chef
       #
       # Defaults for Chef::Provisioning::VcoDriver::Driver
       #
-      class Driver < Chef::Provisioning::Driver
+      module Constants
         #
         # Default driver options
         #
