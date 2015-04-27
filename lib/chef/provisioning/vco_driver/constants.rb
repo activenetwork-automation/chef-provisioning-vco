@@ -51,7 +51,7 @@ class Chef
 
         # Workflow for destroy_machine
         DEFAULT_DRIVER_OPTIONS[:vco_options][:workflows][:destroy_machine][:name]  = 'destroy_machine'
-        DEFAULT_DRIVER_OPTIONS[:vco_options][:workflows][:destroy_machine][:id]    = 'b5ddf095-7615-4351-9f9c-b33fb0ff215c'
+        DEFAULT_DRIVER_OPTIONS[:vco_options][:workflows][:destroy_machine][:id]    = '14675651-a466-4ef2-b176-8ddc3a0a4bef'
 
         # Workflow for get_machine_info (used in instance_for)
         DEFAULT_DRIVER_OPTIONS[:vco_options][:workflows][:get_machine_info][:name] = 'get_machine_info'
