@@ -147,7 +147,11 @@ class Chef
               'ram'            => machine_options[:ram],
               'image'          => machine_options[:image]
             }
-            machine_spec.reference['is_windows'] = machine_options[:is_windows] if machine_options[:is_windows]
+
+            # Some options that may or may not be present...
+            machine_spec.reference['ssh_username'] = machine_options[:ssh_username] if machine_options.key?(:ssh_username)
+            machine_spec.reference['sudo']         = machine_options[:sudo] if machine_options.key?(:sudo)
+            machine_spec.reference['is_windows']   = machine_options[:is_windows] if machine_options[:is_windows]
           end
         end
 
