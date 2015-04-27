@@ -53,6 +53,8 @@ machine node_name do
     :cpu                => cpu_count,
     :ram                => ram_mb,
     :image              => vm_template,
+    :ssh_username       => 'knife',
+    :sudo               => true,
     :is_windows         => false
   })
 end
