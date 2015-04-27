@@ -379,7 +379,7 @@ class Chef
         # @param [Hash] machine_options A set of options representing the desired state of the machine
         # @return [Chef::Provisioning::Transport::SSH]
         def transport_for(machine_spec, machine_options, instance)
-          # if machine_options.has_key?(:transport) && machine_options[:transport].eql?(:vmtools)
+          # if machine_options.key?(:transport) && machine_options[:transport].eql?(:vmtools)
           #   create_vmtools_transport(machine_spec, machine_options, instance)
           # elsif machine_spec.reference['is_windows']
           if machine_spec.reference['is_windows']
@@ -399,20 +399,20 @@ class Chef
           # ssh_options = ssh_options_for(machine_spec, machine_options, instance)
           ssh_options = nil
           username = machine_spec.reference['ssh_username'] || machine_options[:ssh_username] || default_ssh_username
-          if machine_options.has_key?(:ssh_username) && machine_options[:ssh_username] != machine_spec.reference['ssh_username']
+          if machine_options.key?(:ssh_username) && machine_options[:ssh_username] != machine_spec.reference['ssh_username']
             Chef::Log.warn("Server #{machine_spec.name} was created with SSH username #{machine_spec.reference['ssh_username']} and machine_options specifies username #{machine_options[:ssh_username]}.  Using #{machine_spec.reference['ssh_username']}.  Please edit the node and change the chef_provisioning.reference.ssh_username attribute if you want to change it.")
           end
           options = {}
-          if machine_spec.reference[:sudo] || (!machine_spec.reference.has_key?(:sudo) && username != 'root')
+          if machine_spec.reference[:sudo] || (!machine_spec.reference.key?(:sudo) && username != 'root')
             options[:prefix] = 'sudo '
           end
 
           # remote_host = determine_remote_host(machine_spec, instance)
           remote_host = instance[:ip_address]
 
-          #Enable pty by default
+          # Enable pty by default
           options[:ssh_pty_enable] = true
-          options[:ssh_gateway] = machine_spec.reference['ssh_gateway'] if machine_spec.reference.has_key?('ssh_gateway')
+          options[:ssh_gateway] = machine_spec.reference['ssh_gateway'] if machine_spec.reference.key?('ssh_gateway')
 
           Chef::Provisioning::Transport::SSH.new(remote_host, username, ssh_options, options, config)
         end
