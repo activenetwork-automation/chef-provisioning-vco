@@ -55,7 +55,7 @@ class Chef
         def initialize(driver_url, config)
           super(driver_url, config)
 
-          Chef::Log.debug "Initializing vco_driver..."
+          Chef::Log.debug 'Initializing vco_driver...'
 
           _, @tenant, @business_unit = driver_url.split(/:/)
 
@@ -135,17 +135,17 @@ class Chef
 
             # Create our reference data
             machine_spec.reference = {
-              'driver_url' => driver_url,
+              'driver_url'     => driver_url,
               'driver_version' => Chef::Provisioning::VcoDriver::VERSION,
-              'allocated_at' => Time.now.utc.to_s,
-              'host_node' => action_handler.host_node,
-              'vco_url' => @driver_options[:vco_options][:url],
-              'workflow_name' => workflow.name,
-              'workflow_id' => workflow.id,
-              'execution_id' => workflow.execution_id,
-              'cpu' => machine_options[:cpu],
-              'ram' => machine_options[:ram],
-              'image' => machine_options[:image]
+              'allocated_at'   => Time.now.utc.to_s,
+              'host_node'      => action_handler.host_node,
+              'vco_url'        => @driver_options[:vco_options][:url],
+              'workflow_name'  => workflow.name,
+              'workflow_id'    => workflow.id,
+              'execution_id'   => workflow.execution_id,
+              'cpu'            => machine_options[:cpu],
+              'ram'            => machine_options[:ram],
+              'image'          => machine_options[:image]
             }
             machine_spec.reference['is_windows'] = machine_options[:is_windows] if machine_options[:is_windows]
           end
@@ -315,8 +315,6 @@ class Chef
             # If execution state is still in something "still running", bail on wait timeout.
             # Note: when execution is completed wf_token.alive? will be false.
             raise "Workflow wait timeout for #{machine_spec.name}" if wf_token.alive?
-
-
           end
         end
 
@@ -329,9 +327,7 @@ class Chef
         def machine_for(machine_spec, machine_options, instance = nil)
           instance ||= instance_for(machine_spec, machine_options)
 
-          if !instance
-            raise "Instance for node #{machine_spec.name} has not been created!"
-          end
+          raise "Instance for node #{machine_spec.name} has not been created!" unless instance
 
           if machine_spec.reference['is_windows']
             Chef::Provisioning::Machine::WindowsMachine.new(machine_spec, transport_for(machine_spec, machine_options, instance), convergence_strategy_for(machine_spec, machine_options))
@@ -346,8 +342,9 @@ class Chef
         # @param [Hash] machine_options A set of options representing the desired state of the machine
         # @return [Hash]
         def instance_for(machine_spec, machine_options)
+          _ = machine_options
           # If the vm name and uuid don't yet exist, we can't get instance data
-          return nil unless machine_spec.reference.has_key?['vm_name'] && machine_spec.reference.has_key?['vm_uuid']
+          return nil unless machine_spec.reference.key?['vm_name'] && machine_spec.reference.key?['vm_uuid']
 
           # Create the workflow object to get the VM info for the instance
           workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:get_machine_info][:name],
@@ -427,6 +424,7 @@ class Chef
         # @param [Hash] machine_options A set of options representing the desired state of the machine
         # @return [Chef::Provisioning::Transport::WinRM]
         def create_winrm_transport(machine_spec, machine_options, instance)
+          _ = machine_options
           # remote_host = determine_remote_host(machine_spec, instance)
           remote_host = instance[:ip_address]
 
@@ -493,6 +491,7 @@ class Chef
         # @param [Chef::Provisioning::ManagedEntry] machine_spec A machine specification representing this machine.
         # @param [Hash] machine_options A set of options representing the desired state of the machine
         def wait_for_machine(machine_spec, machine_options)
+          _ = machine_options
           # Get the WorkflowToken for our execution, so we can get some additional
           # information to locate our VM. If the VM request isn't complete yet, we need to
           # hang around and wait for it to complete. Stop waiting when we hit our max_wait
