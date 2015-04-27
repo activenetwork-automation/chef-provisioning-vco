@@ -260,7 +260,7 @@ class Chef
 
             if instance.nil?
               Chef::Log.debug "Instance #{machine_spec.name} does not seem to exist, nothing to stop."
-
+              return
             end
 
             # Construct the workflow
@@ -423,33 +423,34 @@ class Chef
 
         # Create a WinRM Transport
         # Stolen gratuitously from Chef::Provisioning::AwsDriver
+        # TODO: Actually implment this...
         #
         # @param [Chef::Provisioning::ManagedEntry] machine_spec A machine specification representing this machine.
         # @param [Hash] machine_options A set of options representing the desired state of the machine
         # @return [Chef::Provisioning::Transport::WinRM]
         def create_winrm_transport(machine_spec, machine_options, instance)
-          _ = machine_options
-          # remote_host = determine_remote_host(machine_spec, instance)
-          remote_host = instance[:ip_address]
-
-          port = machine_spec.reference['winrm_port'] || 5985
-          endpoint = "http://#{remote_host}:#{port}/wsman"
-          type = :plaintext
-          pem_bytes = get_private_key(instance.key_name)
-          encrypted_admin_password = wait_for_admin_password(machine_spec)
-
-          decoded = Base64.decode64(encrypted_admin_password)
-          private_key = OpenSSL::PKey::RSA.new(pem_bytes)
-          decrypted_password = private_key.private_decrypt decoded
-
-          winrm_options = {
-            :user => machine_spec.reference['winrm_username'] || 'Administrator',
-            :pass => decrypted_password,
-            :disable_sspi => true,
-            :basic_auth_only => true
-          }
-
-          Chef::Provisioning::Transport::WinRM.new("#{endpoint}", type, winrm_options, {})
+          # _ = machine_options
+          # # remote_host = determine_remote_host(machine_spec, instance)
+          # remote_host = instance[:ip_address]
+          #
+          # port = machine_spec.reference['winrm_port'] || 5985
+          # endpoint = "http://#{remote_host}:#{port}/wsman"
+          # type = :plaintext
+          # pem_bytes = get_private_key(instance.key_name)
+          # encrypted_admin_password = wait_for_admin_password(machine_spec)
+          #
+          # decoded = Base64.decode64(encrypted_admin_password)
+          # private_key = OpenSSL::PKey::RSA.new(pem_bytes)
+          # decrypted_password = private_key.private_decrypt decoded
+          #
+          # winrm_options = {
+          #   :user => machine_spec.reference['winrm_username'] || 'Administrator',
+          #   :pass => decrypted_password,
+          #   :disable_sspi => true,
+          #   :basic_auth_only => true
+          # }
+          #
+          # Chef::Provisioning::Transport::WinRM.new("#{endpoint}", type, winrm_options, {})
         end
 
         # Private methods start here
