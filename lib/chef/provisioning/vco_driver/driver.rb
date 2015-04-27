@@ -3,7 +3,7 @@ require 'chef/provisioning/version'
 require 'chef/provisioning/machine/basic_machine'
 require 'chef/provisioning/machine/unix_machine'
 require 'chef/provisioning/machine/windows_machine'
-require 'chef/provisioning/vco_driver/defaults'
+require 'chef/provisioning/vco_driver/constants'
 require 'chef/provisioning/vco_driver/version'
 require 'chef/provisioning/transport/ssh'
 require 'chef/provisioning/transport/winrm'
@@ -16,6 +16,9 @@ class Chef
     module VcoDriver
       #
       class Driver < Chef::Provisioning::Driver
+        # Pull in constants
+        include Chef::Provisioning::VcoDriver::Constants
+
         # vRA Tenant name
         attr_reader :tenant
 
@@ -24,7 +27,6 @@ class Chef
 
         # Chef Provisioning Driver Options
         attr_reader :driver_options
-        attr_reader :driver_defaults
 
         # Max wait time (for things like ready_machine)
         attr_accessor :max_wait
