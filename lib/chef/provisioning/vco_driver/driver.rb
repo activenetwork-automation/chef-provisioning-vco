@@ -112,61 +112,83 @@ class Chef
         def allocate_machine(action_handler, machine_spec, machine_options)
           #
           action_handler.perform_action "Create #{machine_spec.name} with template #{machine_options[:image]}, tenant #{@tenant}, business unit #{@business_unit}" do
-            Chef::Log.debug "Creating instance with bootstrap options #{machine_options}"
+            Chef::Log.debug "Creating instance with machine options #{machine_options}"
 
-            # See if we've provisoned this already
-            # If we have, make sure the machine is up, then return.
-            if machine_spec.reference['vm_uuid'] && !machine_spec.reference['vm_uuid'].nil?
-              Chef::Log.debug("Machine #{machine_spec.name} should already exist; starting...")
-              start_machine(action_handler, machine_spec, machine_options)
-              return machine_spec
+            bootstrap_options = bootstrap_options_for(action_handler, machine_spec, machine_options)
+
+            # If we have machine_spec.reference, ensure the instance actually exists...
+            if machine_spec.reference
+              instance = instance_for(machine_spec, machine_options)
+              if instance.nil?
+                # If the instance doesn't exist, it might still be building. See if there's a build in progress
+                if machine_spec.reference.key?('workflow_id') && machine_spec.reference.key?('execution_id')
+                  wf_token   = VcoWorkflows::WorkflowToken.new(workflow_service_for(@driver_options),
+                                                               machine_spec.reference['workflow_id'],
+                                                               machine_spec.reference['execution_id'])
+                  if wf_token.alive?
+                    action_handler.perform_action("Machine #{machine_spec.name} is still building...")
+                  end
+                else
+                  action_handler.perform_action("Machine #{machine_spec.name} does not seem to exist.") do
+                    machine_spec.reference = nil
+                  end
+                end
+              end
             end
-            
-            # Apparently it doesn't exist yet, so we need to make one.
-            # Construct the workflow
-            Chef::Log.debug "Creating workflow request for #{machine_spec.name}..."
-            workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:allocate_machine][:name],
-                                                  id: @driver_options[:vco_options][:workflows][:allocate_machine][:id],
-                                                  service: workflow_service_for(@driver_options))
 
-            # Set the parameters to create the machine
-            workflow.parameters = {
-              'nodename'          => machine_spec.name,
-              'tenant'            => @tenant,
-              'businessUnit'      => @business_unit,
-              'reservationPolicy' => machine_options[:reservation_policy],
-              'environment'       => machine_options[:environment],
-              'onBehalfOf'        => machine_options[:on_behalf_of],
-              'location'          => machine_options[:location],
-              'component'         => machine_options[:component],
-              'coreCount'         => machine_options[:cpu],
-              'ramMB'             => machine_options[:ram],
-              'image'             => machine_options[:image]
-            }
+            unless machine_spec.reference
+              action_handler.perform_action("Creating machine #{machine_spec.name} with options #{machine_options}") do
+                # Apparently it doesn't exist yet, so we need to make one.
+                # Construct the workflow
+                Chef::Log.debug "Creating workflow request for #{machine_spec.name}..."
+                Chef::Log.debug "vCO driver: workflow name: #{@driver_options[:vco_options][:workflows][:allocate_machine][:name]}"
+                Chef::Log.debug "vCO driver: workflow id: #{@driver_options[:vco_options][:workflows][:allocate_machine][:id]}"
+                workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:allocate_machine][:name],
+                                                      id: @driver_options[:vco_options][:workflows][:allocate_machine][:id],
+                                                      service: workflow_service_for(@driver_options))
 
-            # Execute the workflow
-            Chef::Log.debug "Submitting provisioning workflow execution for #{machine_spec.name}"
-            workflow.execute
+                # Set the parameters to create the machine
+                Chef::Log.debug 'Setting workflow parameters...'
+                workflow.parameters = {
+                  'nodename'          => machine_spec.name,
+                  'tenant'            => @tenant,
+                  'businessUnit'      => @business_unit,
+                  'reservationPolicy' => bootstrap_options[:reservation_policy],
+                  'environment'       => bootstrap_options[:environment],
+                  'onBehalfOf'        => bootstrap_options[:on_behalf_of],
+                  'location'          => bootstrap_options[:location],
+                  'component'         => bootstrap_options[:component],
+                  'coreCount'         => bootstrap_options[:cpu],
+                  'ramMB'             => bootstrap_options[:ram],
+                  'image'             => bootstrap_options[:image]
+                }
+                Chef::Log.debug "Workflow: #{workflow}"
 
-            # Create our reference data
-            machine_spec.reference = {
-              'driver_url'     => driver_url,
-              'driver_version' => Chef::Provisioning::VcoDriver::VERSION,
-              'allocated_at'   => Time.now.utc.to_s,
-              'host_node'      => action_handler.host_node,
-              'vco_url'        => @driver_options[:vco_options][:url],
-              'workflow_name'  => workflow.name,
-              'workflow_id'    => workflow.id,
-              'execution_id'   => workflow.execution_id,
-              'cpu'            => machine_options[:cpu],
-              'ram'            => machine_options[:ram],
-              'image'          => machine_options[:image]
-            }
+                # Execute the workflow
+                Chef::Log.debug "Submitting provisioning workflow execution for #{machine_spec.name}"
+                workflow.execute
 
-            # Some options that may or may not be present...
-            machine_spec.reference['ssh_username'] = machine_options[:ssh_username] if machine_options.key?(:ssh_username)
-            machine_spec.reference['sudo']         = machine_options[:sudo] if machine_options.key?(:sudo)
-            machine_spec.reference['is_windows']   = machine_options[:is_windows] if machine_options[:is_windows]
+                # Create our reference data
+                machine_spec.reference = {
+                  'driver_url'     => driver_url,
+                  'driver_version' => Chef::Provisioning::VcoDriver::VERSION,
+                  'allocated_at'   => Time.now.utc.to_s,
+                  'host_node'      => action_handler.host_node,
+                  'vco_url'        => @driver_options[:vco_options][:url],
+                  'workflow_name'  => workflow.name,
+                  'workflow_id'    => workflow.id,
+                  'execution_id'   => workflow.execution_id,
+                  'cpu'            => bootstrap_options[:cpu],
+                  'ram'            => bootstrap_options[:ram],
+                  'image'          => bootstrap_options[:image]
+                }
+
+                # Some options that may or may not be present...
+                machine_spec.reference['ssh_username'] = machine_options[:ssh_username] if machine_options.key?(:ssh_username)
+                machine_spec.reference['sudo']         = machine_options[:sudo] if machine_options.key?(:sudo)
+                machine_spec.reference['is_windows']   = machine_options[:is_windows] if machine_options[:is_windows]
+              end
+            end
           end
         end
         # rubocop:enable LineLength, MethodLength, BlockNesting
