@@ -11,7 +11,17 @@ class Chef
         #
 
         # Initialize the hash
-        DEFAULT_DRIVER_OPTIONS = {}
+        DEFAULT_DRIVER_OPTIONS = {
+          vco_options: {
+            workflows: {
+              allocate_machine: {},
+              start_machine:    {},
+              stop_machine:     {},
+              destroy_machine:  {},
+              get_machine_info: {}
+            }
+          }
+        }
 
         # Orchestrator URL
         # This should be in the form https://#{fqdn}:#{port}/
