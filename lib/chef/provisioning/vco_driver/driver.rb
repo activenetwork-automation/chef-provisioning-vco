@@ -9,6 +9,9 @@ require 'chef/provisioning/transport/ssh'
 require 'chef/provisioning/transport/winrm'
 require 'vcoworkflows'
 
+# rubocop:disable ClassLength
+
+#
 class Chef
   #
   module Provisioning
@@ -59,23 +62,35 @@ class Chef
 
           _, @tenant, @business_unit = driver_url.split(/:/)
 
-          Chef::Log.debug "vco driver: tenant = '#{@tenant}'; business unit = '#{@business_unit}'"
+          Chef::Log.debug "vCO driver: tenant: '#{@tenant}'"
+          Chef::Log.debug "vCO driver: business unit: '#{@business_unit}'"
+
+          Chef::Log.debug "vCO driver: given config:\n#{config.to_yaml}"
 
           # Merge driver option defaults with given options.
+          Chef::Log.debug "vCO driver: default driver options:\n#{DEFAULT_DRIVER_OPTIONS.to_yaml}"
+          Chef::Log.debug "vCO driver: given driver options:\n#{config[:driver_options].to_yaml}"
+          Chef::Log.debug 'vCO driver: extracting and merging vco_options...'
+          vco_options = DEFAULT_DRIVER_OPTIONS[:vco_options].merge(config[:driver_options][:vco_options])
+          Chef::Log.debug 'vCO driver: merging base driver options...'
           @driver_options = DEFAULT_DRIVER_OPTIONS.merge(config[:driver_options])
-          Chef::Log.debug "vco driver: options set to: #{@driver_options}"
+          Chef::Log.debug 'vCO driver: re-merging vco_options...'
+          @driver_options[:vco_options] = vco_options
+          Chef::Log.debug "vCO driver: options set to: \n#{@driver_options.to_yaml}"
 
           # Set max_wait from the driver options
           @max_wait      = @driver_options[:vco_options][:max_wait]
           @wait_interval = @driver_options[:vco_options][:wait_interval]
 
-          Chef::Log.debug "vco driver: max_wait set to #{@max_wait} seconds."
-          Chef::Log.debug "vco driver: wait_interval set to #{@wait_interval} seconds."
+          Chef::Log.debug "vCO driver: max_wait set to #{@max_wait} seconds."
+          Chef::Log.debug "vCO driver: wait_interval set to #{@wait_interval} seconds."
         end
 
         def self.canonicalize_url(driver_url, config)
-          [ driver_url, config ]
+          [driver_url, config]
         end
+
+        # rubocop:disable LineLength, MethodLength, BlockNesting
 
         # Allocate a machine from the underlying service.  This method
         # does not need to wait for the machine to boot or have an IP, but it must
@@ -154,6 +169,7 @@ class Chef
             machine_spec.reference['is_windows']   = machine_options[:is_windows] if machine_options[:is_windows]
           end
         end
+        # rubocop:enable LineLength, MethodLength, BlockNesting
 
         # Ready a machine, to the point where it is running and accessible via a
         # transport. This will NOT allocate a machine, but may kick it if it is down.
@@ -171,11 +187,7 @@ class Chef
         #
         def ready_machine(action_handler, machine_spec, machine_options)
           action_handler.perform_action "Making #{machine_spec.name} ready" do
-            Chef::Log.debug "Readying instance with machine_spec reference #{machine_spec[:reference]}"
-
-            # ============================
-            # Ensure the machine was built
-            # ============================
+            Chef::Log.debug "Readying instance with machine_spec reference #{machine_spec.reference.to_yaml}"
 
             # First check machine_spec to see if it's already got a name and uuid.
             # If it does, then can check to see if the machine is alive, and simply carry on
@@ -205,10 +217,9 @@ class Chef
         # @return [Machine] A machine object pointing at the machine, allowing useful actions like setup,
         # converge, execute, file and directory.
         #
-        def connect_to_machine(machine_spec, machine_options)
-          raise "Whoops, somebody didn't implement connect_to_machine!"
-        end
-
+        # def connect_to_machine(machine_spec, machine_options)
+        #   raise "Whoops, somebody didn't implement connect_to_machine!"
+        # end
 
         # Delete the given machine --  destroy the machine,
         # returning things to the state before allocate_machine was called.
@@ -251,7 +262,7 @@ class Chef
         # @param [Chef::Provisioning::ManagedEntry] machine_spec A machine specification representing this machine.
         # @param [Hash] machine_options A set of options representing the desired state of the machine
         # @param [Boolean] wait Whether to wait for the shutdown to complete or not.
-        def stop_machine(action_handler, machine_spec, machine_options, wait = false)
+        def stop_machine(action_handler, machine_spec, machine_options)
           action_handler.perform_action "Stopping machine #{machine_spec.name}" do
             Chef::Log.debug "Stopping machine #{machine_spec.name}"
 
@@ -429,7 +440,9 @@ class Chef
         # @param [Hash] machine_options A set of options representing the desired state of the machine
         # @return [Chef::Provisioning::Transport::WinRM]
         def create_winrm_transport(machine_spec, machine_options, instance)
-          # _ = machine_options
+          _ = machine_spec
+          _ = machine_options
+          _ = instance
           # # remote_host = determine_remote_host(machine_spec, instance)
           # remote_host = instance[:ip_address]
           #
@@ -510,7 +523,7 @@ class Chef
           wf_token = wait_for_workflow(wf_token)
 
           # If execution state comes back with failed, we need to bail
-          raise "Workflow failed for #{machine_spec.name}!" if wf_token.state.match?(/failed/i)
+          raise "Workflow failed for #{machine_spec.name}!" if wf_token.state.match(/failed/i)
 
           # If execution state is still in something "still running", bail on wait timeout.
           # Note: when execution is completed wf_token.alive? will be false.
