@@ -47,10 +47,6 @@ class Chef
         DEFAULT_DRIVER_OPTIONS[:vco_options][:workflows][:allocate_machine][:name] = 'allocate_machine'
         DEFAULT_DRIVER_OPTIONS[:vco_options][:workflows][:allocate_machine][:id]   = '708bf42d-2eb5-4dec-b511-e8295b66245b'
 
-        # Workflow for ready_machine
-        DEFAULT_DRIVER_OPTIONS[:vco_options][:workflows][:ready_machine][:name]    = 'ready_machine'
-        DEFAULT_DRIVER_OPTIONS[:vco_options][:workflows][:ready_machine][:id]      = 'd2065000-d7cc-4719-be9e-4f7318ccf708'
-
         # Workflow for start_machine
         DEFAULT_DRIVER_OPTIONS[:vco_options][:workflows][:start_machine][:name]    = 'start_machine'
         DEFAULT_DRIVER_OPTIONS[:vco_options][:workflows][:start_machine][:id]      = 'd2065000-d7cc-4719-be9e-4f7318ccf708'
