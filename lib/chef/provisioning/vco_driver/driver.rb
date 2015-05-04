@@ -355,6 +355,31 @@ class Chef
           end
         end
 
+        def bootstrap_options_for(action_handler, machine_spec, machine_options)
+          _ = action_handler
+          _ = machine_spec
+          bootstrap_options = (machine_options[:bootstrap_options] || {}).to_h.dup
+          # image_id = bootstrap_options[:image_id] || machine_options[:image_id] || default_ami_for_region(aws_config.region)
+          # bootstrap_options[:image_id] = image_id
+          # if !bootstrap_options[:key_name]
+          #   Chef::Log.debug('No key specified, generating a default one...')
+          #   bootstrap_options[:key_name] = default_aws_keypair(action_handler, machine_spec)
+          # end
+          image = bootstrap_options[:image] || machine_options[:image] || nil
+          bootstrap_options[:image] = image
+
+          # if machine_options[:is_windows]
+          #   Chef::Log.debug "Setting WinRM userdata..."
+          #   bootstrap_options[:user_data] = user_data
+          # else
+          #   Chef::Log.debug "Non-windows, not setting userdata"
+          # end
+
+          # bootstrap_options = AWSResource.lookup_options(bootstrap_options, managed_entry_store: machine_spec.managed_entry_store, driver: self)
+          # Chef::Log.debug "AWS Bootstrap options: #{bootstrap_options.inspect}"
+          bootstrap_options
+        end
+
         # Create a machine object
         #
         # @param [Chef::Provisioning::ManagedEntry] machine_spec A machine specification representing this machine.
