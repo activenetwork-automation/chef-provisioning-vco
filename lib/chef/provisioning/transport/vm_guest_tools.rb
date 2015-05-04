@@ -1,12 +1,5 @@
-require 'chef/provisioning/driver'
-require 'chef/provisioning/version'
-require 'chef/provisioning/machine/basic_machine'
-require 'chef/provisioning/machine/unix_machine'
-require 'chef/provisioning/machine/windows_machine'
-require 'chef/provisioning/vco_driver/constants'
-require 'chef/provisioning/vco_driver/version'
-require 'chef/provisioning/transport/ssh'
-require 'chef/provisioning/transport/winrm'
+require 'chef/provisioning/transport'
+require 'chef/log'
 require 'vcoworkflows'
 
 class Chef
@@ -16,7 +9,13 @@ class Chef
     class Transport
       #
       class VmGuestTools < Chef::Provisioning::Transport
+        #
+        # ssh:   def initialize(host, username, ssh_options, options, global_config)
+        # winrm: def initialize(endpoint, type, options, global_config)
 
+        def initialize
+          # TODO: do something
+        end
       end
     end
   end
