@@ -405,33 +405,49 @@ class Chef
         # @return [Hash]
         def instance_for(machine_spec, machine_options)
           _ = machine_options
-          # If the vm name and uuid don't yet exist, we can't get instance data
-          return nil unless machine_spec.reference.key?['vm_name'] && machine_spec.reference.key?['vm_uuid']
 
-          # Create the workflow object to get the VM info for the instance
-          workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:get_machine_info][:name],
-                                                id: @driver_options[:vco_options][:workflows][:get_machine_info][:id],
-                                                service: workflow_service_for(@driver_options))
+          instance = nil
 
-          workflow.parameters = {
-            'vmName' => machine_spec.reference['vm_name'],
-            'vmUuid' => machine_spec.reference['vm_uuid']
-          }
-          workflow.execute
+          if machine_spec.reference
+            if machine_spec.reference.key?('driver_url') && machine_spec.reference['driver_url'] != driver_url
+              raise "Switching a machine's driver from #{machine_spec.reference['driver_url']} to #{driver_url} is not currently supported!  Use machine :destroy and then re-create the machine on the new driver."
+            end
 
-          wf_token = wait_for_workflow(workflow.token)
-          return nil if wf_token.state.match(/failed/i)
+            # If we have the necessary machine_spec reference items, get the instance data
+            Chef::Log.debug "vCO driver: Finding instance for #{machine_spec.name}..."
+            if machine_spec.reference.key?('vm_name') && machine_spec.reference.key?('vm_uuid')
+              Chef::Log.debug "vCO driver: Looking for VM name '#{machine_spec.reference['vm_name']}', UUID '#{machine_spec.reference['vm_uuid']}'"
+              # Create the workflow object to get the VM info for the instance
+              Chef::Log.debug "vCO driver: Fetching workflow '#{@driver_options[:vco_options][:workflows][:get_machine_info][:name]}', id '#{@driver_options[:vco_options][:workflows][:get_machine_info][:id]}'"
+              workflow = VcoWorkflows::Workflow.new(@driver_options[:vco_options][:workflows][:get_machine_info][:name],
+                                                    id: @driver_options[:vco_options][:workflows][:get_machine_info][:id],
+                                                    service: workflow_service_for(@driver_options))
 
-          {
-            host_name:       wf_token.output_parameters['hostName'],
-            ip_address:      wf_token.output_parameters['ipAddress'],
-            vm_host:         wf_token.output_parameters['vmHost'],
-            boot_time:       wf_token.output_parameters['bootTime'],
-            power_state:     wf_token.output_parameters['powerState'],
-            clean_power_off: wf_token.output_parameters['cleanPowerOff'],
-            online_standby:  wf_token.output_parameters['onlineStandBy'],
-            guest_state:     wf_token.output_parameters['guestState']
-          }
+              Chef::Log.debug 'vCO driver: Setting workflow parameters...'
+              workflow.parameters = {
+                'vmName' => machine_spec.reference['vm_name'],
+                'vmUuid' => machine_spec.reference['vm_uuid']
+              }
+              Chef::Log.debug 'vCO driver: Executing workflow...'
+              workflow.execute
+
+              instance = {
+                host_name:       workflow.token.output_parameters['hostName'],
+                ip_address:      workflow.token.output_parameters['ipAddress'],
+                vm_host:         workflow.token.output_parameters['vmHost'],
+                boot_time:       workflow.token.output_parameters['bootTime'],
+                power_state:     workflow.token.output_parameters['powerState'],
+                clean_power_off: workflow.token.output_parameters['cleanPowerOff'],
+                online_standby:  workflow.token.output_parameters['onlineStandBy'],
+                guest_state:     workflow.token.output_parameters['guestState']
+              } unless workflow.token.state.match(/failed/i)
+              Chef::Log.debug "Retrieved instance data:\n#{instance.to_yaml}"
+            end
+          end
+
+          Chef::Log.debug "Failed to find instance for #{machine_spec.name} (instance = nil)" unless instance
+
+          instance
         end
 
         # Get an appropriate transport for the machine
