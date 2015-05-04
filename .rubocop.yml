@@ -2,12 +2,18 @@ AllCops:
   Exclude:
     - Guardfile
     - vendor/**/*
-    - example.rb
+    - docs/**/*
 Metrics/AbcSize:
+  Enabled: false
+Style/CyclomaticComplexity:
   Enabled: false
 Style/LineLength:
   Enabled: false
 Style/MethodLength:
+  Enabled: false
+Style/PerceivedComplexity:
+  Enabled: false
+Style/SignalException:
   Enabled: false
 #Style/SpecialGlobalVars:
 #  Enabled: false

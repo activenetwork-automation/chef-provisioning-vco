@@ -1,6 +1,6 @@
 # coding: utf-8
 
-# rubocop:disable All
+# rubocop:disable all
 
 lib = File.expand_path('../lib', __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
@@ -12,14 +12,14 @@ Gem::Specification.new do |spec|
   spec.authors       = ['Gregory Ruiz-Ade']
   spec.email         = ['gkra@unnerving.org']
 
-  if spec.respond_to?(:metadata)
-    spec.metadata['allowed_push_host'] = "TODO: Set to 'http://mygemserver.com' to prevent pushes to rubygems.org, or delete to allow pushes to any server."
-  end
+  # if spec.respond_to?(:metadata)
+  #   spec.metadata['allowed_push_host'] = "TODO: Set to 'http://mygemserver.com' to prevent pushes to rubygems.org, or delete to allow pushes to any server."
+  # end
 
-  spec.summary       = %q{TODO: Write a short summary, because Rubygems requires one.}
-  spec.description   = %q{TODO: Write a longer description or delete this line.}
+  spec.summary       = 'Chef Provisioning Driver for VMware vCAC/vCO IaaS via vcoworkflows'
+  spec.description   = 'Chef Provisioning Driver for VMWare vCAC/vCO IaaS via vcoworkflows'
   spec.homepage      = 'https://github.com/vaquero-io/chef-provisioning-vco.git'
-  spec.license       = 'MIT'
+  spec.license       = 'apache2'
 
   spec.files         = `git ls-files -z`.split("\x0").reject { |f| f.match(%r{^(test|spec|features)/}) }
   spec.bindir        = 'exe'
@@ -38,4 +38,4 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'guard-yard'
 end
 
-# rubocop:enable All
+# rubocop:enable all
