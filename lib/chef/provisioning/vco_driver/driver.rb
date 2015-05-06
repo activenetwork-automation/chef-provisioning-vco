@@ -194,31 +194,30 @@ class Chef
         def ready_machine(action_handler, machine_spec, machine_options)
           Chef::Log.debug "vCO driver: Ready machine with machine_spec reference #{machine_spec.reference}"
 
-          machine = nil
           instance = instance_for(machine_spec, machine_options)
 
-          action_handler.perform_action("Ready machine #{machine_spec.name}...") do
-            # If we couldn't already get an instance, and it's still building,
-            # wait for the build to complete.
-            if !instance && machine_building?(machine_spec, machine_options)
+          # If we couldn't already get an instance, and it's still building,
+          # wait for the build to complete.
+          if !instance && machine_building?(machine_spec, machine_options)
+            action_handler.perform_action("Waiting for machine #{machine_spec.name} to build...") do
               wait_for_machine(machine_spec, machine_options)
             end
-
-            # If we had to wait for it to build, get the instance
-            instance ||= instance_for(machine_spec, machine_options)
-            if instance && instance[:guest_state].nil?
-              Chef::Log.warn 'vCO driver: Got instance with nil guestState!'
-            end
-
-            # Make sure the VM is powered on and available
-            unless instance[:guest_state].eql?('running')
-              Chef::Log.debug "vCO driver: Machine not running(?): power = #{instance['powerState']}, guest state = #{instance['guestState']}"
-              start_machine(action_handler, machine_spec, machine_options, instance)
-            end
-
-            Chef::Log.debug "vCO driver: Creating Machine object for instance #{machine_spec.name}"
-            machine = machine_for(machine_spec, machine_options, instance)
           end
+
+          # If we had to wait for it to build, get the instance
+          instance ||= instance_for(machine_spec, machine_options)
+          if instance && instance[:guest_state].nil?
+            Chef::Log.warn 'vCO driver: Got instance with nil guestState!'
+          end
+
+          # Make sure the VM is powered on and available
+          unless instance[:guest_state].eql?('running')
+            Chef::Log.debug "vCO driver: Machine not running(?): power = #{instance['powerState']}, guest state = #{instance['guestState']}"
+            start_machine(action_handler, machine_spec, machine_options, instance)
+          end
+
+          Chef::Log.debug "vCO driver: Creating Machine object for instance #{machine_spec.name}"
+          machine = machine_for(machine_spec, machine_options, instance)
 
           Chef::Log.debug "vCO driver: Got machine for #{machine_spec.name}: #{machine}"
           machine
