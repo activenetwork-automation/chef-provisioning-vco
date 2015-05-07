@@ -648,7 +648,9 @@ class Chef
           VcoWorkflows::WorkflowToken.new(workflow_service_for(@driver_options), workflow_id, execution_id)
         end
 
-        # Wait for a machine that is building
+        # Wait for a machine that is building, and when the build is complete,
+        # take the VM Name and UUID of the resulting VM and store it in the
+        # machine_spec.reference
         #
         # @param [Chef::Provisioning::ManagedEntry] machine_spec A machine specification representing this machine.
         # @param [Hash] machine_options A set of options representing the desired state of the machine
@@ -660,9 +662,10 @@ class Chef
           # timeout.
           Chef::Log.debug "vCO driver: Waiting for #{machine_spec.name} to complete provisioning..."
           execution = wait_for_workflow(get_workflow_execution(machine_spec.reference['workflow_id'],
-                                                           machine_spec.reference['execution_id']))
+                                                               machine_spec.reference['execution_id']))
 
-          # If execution state comes back with failed, we need to bail
+          # If this workflow execution failed, it means the machine failed
+          # to successfully provision. Raise an exception.
           raise "Workflow failed for #{machine_spec.name}!" if execution.state.match(/failed/i)
 
           # If execution state is still in something "still running", bail on wait timeout.
