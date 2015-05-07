@@ -702,11 +702,9 @@ class Chef
           Chef::Log.debug "vCO driver: Determining if machine #{machine_spec.name} is still building..."
           is_building = false
           if machine_spec.reference.key?('workflow_id') && machine_spec.reference.key?('execution_id')
-            if instance_for(machine_spec, machine_options).nil?
-              execution = get_workflow_execution(machine_spec.reference['workflow_id'],
-                                             machine_spec.reference['execution_id'])
-              is_building = execution.alive?
-            end
+            execution = get_workflow_execution(machine_spec.reference['workflow_id'],
+                                               machine_spec.reference['execution_id'])
+            is_building = execution.alive?
           end
           is_building
         end
