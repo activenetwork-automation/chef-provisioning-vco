@@ -116,18 +116,23 @@ class Chef
         def allocate_machine(action_handler, machine_spec, machine_options)
           Chef::Log.debug "vCO driver: Creating instance with machine options #{machine_options}"
 
-          # If there's already reference data, and it contains the workflow ID
-          # and execution ID from an allocation attempt, make sure the instance
-          # exists or is building. Otherwise, if we have no evidence of a
-          # successful build, wipe it and start over.
-          if machine_spec.reference
-            if machine_building?(machine_spec, machine_options)
-              Chef::Log.info "Machine #{machine_spec.name} is still building..."
-            else
-              if instance_for(machine_spec, machine_options).nil?
-                Chef::Log.info "Machine #{machine_spec.name} does not exist in provider, will re-create."
-                machine_spec.reference = nil
+          # If we expect a machine to be here, and it's not currently building,
+          # see if it actually exists or force a new allocation.
+          if machine_spec.reference && !machine_building?(machine_spec, machine_options)
+            if instance_for(machine_spec, machine_options).nil?
+              # See if the provisioning process succeeded (which will seed the
+              # 'vm_name' and 'vm_uuid' keys into machine_spec).
+              begin
+                wait_for_machine(machine_spec, machine_options)
+              rescue => exception
+                # If the exception is anything other than "workflow failed",
+                # re-raise. Simply eat the "workflow failed" exception.
+                # Keep Calm and Provision On.
+                raise exception unless exception.to_s.match(/Workflow failed/i)
               end
+              # Machine failed to build entirely, try again.
+              Chef::Log.info "Machine #{machine_spec.name} does not exist in provider, will re-create."
+              machine_spec.reference = nil
             end
           end
 
