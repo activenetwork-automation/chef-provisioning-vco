@@ -577,13 +577,9 @@ class Chef
         #  - :destroy_machine
         #  - :get_machine_info
         # @param [Hash] parameters Parameters to set for the workflow
-        # @param [Hash] options execution options for the workflow:
-        #  - :wait [Boolean] whether to wait for execution to complete or not.
+        # @param [Boolean] wait Whether to wait for the execution to complete or not
         # @return [VcoWorkflows::WorkflowToken] Workflow execution results
-        def execute_workflow(workflow_tag, parameters = {}, options = {})
-          options = {
-            wait: false
-          }.merge(options)
+        def execute_workflow(workflow_tag, parameters = {}, wait: false)
 
           # Shorthand to the workflows hash in @driver_options
           workflows = @driver_options[:vco_options][:workflows]
@@ -596,22 +592,22 @@ class Chef
 
           Chef::Log.debug "vCO driver: processing workflow #{wf_name}, id: #{wf_id}"
           Chef::Log.debug "vCO driver: #{wf_name} parameters: #{parameters}"
-          Chef::Log.debug "vCO driver: #{wf_name} options: #{options}"
+          Chef::Log.debug "vCO driver: #{wf_name} wait: #{wait}"
 
-          Chef::Log.debug 'vCO driver: retrieving workflow from Orchestrator...'
+          Chef::Log.debug "vCO driver: retrieving workflow #{wf_name}, #{wf_id} from Orchestrator..."
           service = workflow_service_for(@driver_options)
           workflow = VcoWorkflows::Workflow.new(wf_name, id: wf_id, service: service)
 
           workflow.parameters = parameters
 
-          Chef::Log.debug 'vCO driver: Executing workflow...'
+          Chef::Log.debug "vCO driver: Executing workflow #{wf_name}, #{wf_id} ..."
           workflow.execute
 
           # Get the token
           execution = workflow.token
 
           # No need to wait if the workflow is already "dead" (failed, completed, etc...)
-          if options[:wait] && execution.alive?
+          if wait && execution.alive?
             Chef::Log.debug "vCO driver: waiting for completion of #{wf_name} execution #{execution.id}"
             execution = wait_for_workflow(execution)
           end
