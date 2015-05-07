@@ -168,6 +168,9 @@ class Chef
               'workflow_name'  => execution.name,
               'workflow_id'    => execution.workflow_id,
               'execution_id'   => execution.id,
+              'cpu'            => bootstrap_options[:cpu],
+              'ram'            => bootstrap_options[:ram],
+              'image'          => bootstrap_options[:image]
             }
 
             # Some options that may or may not be present...
