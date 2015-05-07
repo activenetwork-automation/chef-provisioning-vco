@@ -261,11 +261,13 @@ class Chef
             Chef::Log.debug "vCO driver: Destroying instance #{machine_spec.name}..."
 
             # Execute the :destroy_machine workflow
-            execute_workflow(:destroy_machine,
-                             {
-                               'vmName' => machine_spec.reference['vm_name'],
-                               'vmUuid' => machine_spec.reference['vm_uuid']
-                             })
+            execution = execute_workflow(:destroy_machine,
+                                         {
+                                           'vmName' => machine_spec.reference['vm_name'],
+                                           'vmUuid' => machine_spec.reference['vm_uuid']
+                                         },
+                                         wait: true)
+            raise "Destroy machine #{machine_spec.name} failed!" if execution.state.match(/failed/i)
           end
         end
 
@@ -286,12 +288,13 @@ class Chef
             Chef::Log.debug "vCO driver: Stopping machine #{machine_spec.name}"
 
             # Execute the :stop_machine workflow
-            execute_workflow(:stop_machine,
-                             {
-                               'vmName' => machine_spec.reference['vm_name'],
-                               'vmUuid' => machine_spec.reference['vm_uuid']
-                             },
-                             wait: true)
+            execution = execute_workflow(:stop_machine,
+                                         {
+                                           'vmName' => machine_spec.reference['vm_name'],
+                                           'vmUuid' => machine_spec.reference['vm_uuid']
+                                         },
+                                         wait: true)
+            raise "Stop machine #{machine_spec.name} failed!" if execution.state.match(/failed/i)
           end
         end
 
@@ -313,12 +316,13 @@ class Chef
             Chef::Log.debug "vCO driver: Starting machine with machine_spec reference: #{machine_spec.reference}"
 
             # Execute the :start_machine workflow
-            execute_workflow(:start_machine,
-                             {
-                               'vmName' => machine_spec.reference['vm_name'],
-                               'vmUuid' => machine_spec.reference['vm_uuid']
-                             },
-                             wait: true)
+            execution = execute_workflow(:start_machine,
+                                         {
+                                           'vmName' => machine_spec.reference['vm_name'],
+                                           'vmUuid' => machine_spec.reference['vm_uuid']
+                                         },
+                                         wait: true)
+            raise "Start machine #{machine_spec.name} failed!" if execution.state.match(/failed/i)
           end
         end
 
@@ -391,7 +395,6 @@ class Chef
                                              'vmUuid' => machine_spec.reference['vm_uuid']
                                            },
                                            wait: true)
-
 
               unless execution.state.match(/failed/i)
                 instance                   = {}
@@ -612,9 +615,6 @@ class Chef
             Chef::Log.debug "vCO driver: waiting for completion of #{wf_name} execution #{execution.id}"
             execution = wait_for_workflow(execution)
           end
-
-          # If execution state comes back with failed, we need to bail
-          raise "Workflow failed for #{machine_spec.name}!" if execution.state.match(/failed/i)
 
           Chef::Log.debug "vCO driver: returning #{wf_name} execution results:\n#{execution}"
           execution
