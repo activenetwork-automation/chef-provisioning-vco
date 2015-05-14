@@ -170,7 +170,8 @@ class Chef
               'execution_id'   => execution.id,
               'cpu'            => bootstrap_options[:cpu],
               'ram'            => bootstrap_options[:ram],
-              'image'          => bootstrap_options[:image]
+              'image'          => bootstrap_options[:image],
+              'environment'    => bootstrap_options[:environment]
             }
 
             # Some options that may or may not be present...
