@@ -2,7 +2,7 @@
 
 require 'chef/provisioning/vco_driver'
 
-with_driver("vco:atom-active:ref2", {
+with_driver("vco:tenant:business_unit", {
   vco_options: {
     url:           'https://vco.example.com:8281/',
     verify_ssl:    false,
@@ -14,14 +14,14 @@ with_driver("vco:atom-active:ref2", {
 })
 
 with_machine_options({
-  ssh_username:      'knife',
+  ssh_username:      'root',
   sudo:              true,
   is_windows:        false,
   image:             'centos-6.6-x86_64-20150325-1',
   bootstrap_options: {
-    key_path:           File.join(ENV['HOME'], '.ssh', 'knife_rsa'),
+    key_path:           File.join(ENV['HOME'], '.ssh', 'vco_root_rsa'),
     reservation_policy: 'nonprod',
-    on_behalf_of:       'svc.vco@dev.atom.int',
+    on_behalf_of:       'svc.vco@example.com',
     environment:        'lab1',
     component:          'webserver',
     cpu:                1,
